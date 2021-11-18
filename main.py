@@ -116,57 +116,54 @@ sd = np.power(sd_temp, 0.5)
 sd[sd == 0] = 1
 
 normalized_TF_IDF = TF_IDF.mapValues(lambda x: np.divide((x - means), sd))
-normalized_TF_IDF = normalized_TF_IDF.zipWithIndex()
 n = normalized_TF_IDF.count()
 
 #TODO: REVIEW THIS
 r = np.ones(20000) * 0.01
 l = 0.1
 x = normalized_TF_IDF
-labels = normalized_TF_IDF.map(lambda x: isCourtDoc(x[0][0])).fold(np.array([]), lambda acc, ele: np.append(acc, ele))
+labels = normalized_TF_IDF.map(lambda x: (x[0], isCourtDoc(x[0])))
 y = labels
 
-
-theta = x.map(lambda x: (x[0][0], np.dot(x[0][1], r))).fold(('', np.array([])), lambda acc, ele: (acc[0], np.append(acc[1], ele[1])))[1]
-e_to_the_theta = np.exp(theta)
-one_plus_e_to_the_theta = 1 + e_to_the_theta
-log_one_plus_e_to_the_theta = np.log(1 + e_to_the_theta)
-error = np.linalg.norm(r, ord=2) * l
-negative_y_theta = y * -1 * theta
-total_vector = negative_y_theta + log_one_plus_e_to_the_theta + error
-total = np.sum(total_vector)
+theta = None
+e_to_the_theta = None
+one_plus_e_to_the_theta = None
+log_one_plus_e_to_the_theta = None
+J = None
+# error = np.linalg.norm(r, ord=2) * l
+# negative_y_theta = y.join(theta).mapValues(lambda v: v[0] * v[1] * -1)
+# total_vector = negative_y_theta.join(log_one_plus_e_to_the_theta).mapValues(lambda v: v[0] + v[1] + error)
+# total = total_vector.fold(('', 0), lambda acc, ele: (acc[0], acc[1] + ele[1]))
 
 #gradient
-negative_y_x = x.map(lambda x: ((x[0][0], x[0][1] * y[x[1]] * -1), x[1]))
-J = np.divide(e_to_the_theta, one_plus_e_to_the_theta)
-
-P1 = x.map(lambda x: ((x[0][0], x[0][1] * y[x[1]] * -1)))
-P2 = x.map(lambda x: ((x[0][0], x[0][1] * J[x[1]])))
-P3 = x.map(lambda x: ((x[0][0], l * r[x[1]])))
-
-gradient_raw = P1.join(P2).join(P3).map(lambda x: (x[0], x[1][0][0] + x[1][0][1] + x[1][1]))
-new_gradient = gradient_raw.fold(('', np.zeros(20000)), lambda acc, ele: (acc[0], acc[1] + ele[1]))[1]
+# negative_y_x = y.join(x).mapValues(lambda v: v[0] * v[1] * -1)
+# J = np.divide(e_to_the_theta, one_plus_e_to_the_theta)
+# P1 = y.join(x).mapValues(lambda v: v[0] * v[1] * -1)
+# P2 = J.join(x).mapValues(lambda v: v[0] * v[1])
+# P3 = 2 * l * r
+# gradient_raw = P1.join(P2).mapValues(lambda v: v[0] + v[1] + P3)
+# new_gradient = gradient_raw.fold(('', np.zeros(20000)), lambda acc, ele: (acc[0], acc[1] + ele[1]))[1]
 
 def f(x, y, r, l):
-    theta = x.map(lambda x: (x[0][0], np.dot(x[0][1], r))).fold(('', np.array([])),
-                                                                lambda acc, ele: (acc[0], np.append(acc[1], ele[1])))[1]
-    e_to_the_theta = np.exp(theta)
-    one_plus_e_to_the_theta = 1 + e_to_the_theta
-    log_one_plus_e_to_the_theta = np.log(1 + e_to_the_theta)
+    theta = x.map(lambda x: (x[0], np.dot(x[1], r)))
+    e_to_the_theta = theta.map(lambda x: (x[0], np.exp(x[1])))
+    one_plus_e_to_the_theta = e_to_the_theta.mapValues(lambda v: v + 1)
+    log_one_plus_e_to_the_theta = one_plus_e_to_the_theta.mapValues(lambda v: np.log(v))
     error = np.linalg.norm(r, ord=2) * l
-    negative_y_theta = y * -1 * theta
-    total_vector = negative_y_theta + log_one_plus_e_to_the_theta + error
-    total = np.sum(total_vector)
-    return total
-
+    negative_y_theta = y.join(theta).mapValues(lambda v: v[0] * v[1] * -1)
+    total_vector = negative_y_theta.join(log_one_plus_e_to_the_theta).mapValues(lambda v: v[0] + v[1] + error)
+    total = total_vector.fold(('', 0), lambda acc, ele: (acc[0], acc[1] + ele[1]))
+    return total[1]
 
 def gradient(x, y, r, l):
-    negative_y_x = x.map(lambda x: ((x[0][0], x[0][1] * y[x[1]] * -1), x[1]))
-    J = np.divide(e_to_the_theta, one_plus_e_to_the_theta)
-    P1 = x.map(lambda x: ((x[0][0], x[0][1] * y[x[1]] * -1)))
-    P2 = x.map(lambda x: ((x[0][0], x[0][1] * J[x[1]])))
-    P3 = x.map(lambda x: ((x[0][0], l * r[x[1]])))
-    gradient_raw = P1.join(P2).join(P3).map(lambda x: (x[0], x[1][0][0] + x[1][0][1] + x[1][1]))
+    theta = x.map(lambda x: (x[0], np.dot(x[1], r)))
+    e_to_the_theta = theta.map(lambda x: (x[0], np.exp(x[1])))
+    one_plus_e_to_the_theta = e_to_the_theta.mapValues(lambda v: v + 1)
+    J = e_to_the_theta.join(one_plus_e_to_the_theta).mapValues(lambda v: v[0] / float(v[1]))
+    P1 = y.join(x).mapValues(lambda v: v[0] * v[1] * -1)
+    P2 = J.join(x).mapValues(lambda v: v[0] * v[1])
+    P3 = 2 * l * r
+    gradient_raw = P1.join(P2).mapValues(lambda v: v[0] + v[1] + P3)
     new_gradient = gradient_raw.fold(('', np.zeros(20000)), lambda acc, ele: (acc[0], acc[1] + ele[1]))[1]
     return new_gradient
 
@@ -174,6 +171,7 @@ def gradient(x, y, r, l):
 def gd_optimize (x, y, w, c):
     rate = 1
     w_last = w + np.full (20000, 1.0)
+
     while (abs(f(x, y, w, c) - f(x, y, w_last, c)) > 10e-4):
          w_last = w
          # print(gradient(x, y, w, c))
@@ -220,18 +218,18 @@ def predictLabel(k, inputString):
 
 predictLabel(3, "Where do the gods rest upon the shoulders of man. How can we deny his existence?")
 
-number_of_training = 2000
-y_training = y[:number_of_training]
-y_testing = y[number_of_training:]
-modified_x_data =  x.map(lambda x: ((x[0][0], x[0][1] * 0.01), x[1]))
-training_data = modified_x_data.filter(lambda x: x[1] < number_of_training)
-testing_data = modified_x_data.filter(lambda x: x[1] >= number_of_training)
+number_of_training = 1300
+y_training = labels.sample(False, 0.4,0)
+y_testing = labels.subtract(y_training)
+modified_x_data =  x.map(lambda x: (x[0], x[1] * 0.001))
+training_data = modified_x_data.join(y_training).mapValues(lambda v: v[0])
+testing_data = modified_x_data.join(y_testing).mapValues(lambda v: v[0])
 
 training_data.cache()
 testing_data.cache()
 modified_x_data.cache()
 
-optimized = gd_optimize(training_data, y_training, r, 0.1)
+optimized = gd_optimize(training_data, y_training, r, 0.01)
 
 results = testing_data.map(lambda x: (np.dot(x[0][1], optimized) > 0)).map(lambda x: (int(x))).fold(np.array([]), lambda acc, ele: np.append(acc, ele))
 
